@@ -6,10 +6,11 @@
 #include <ArduinoJson.h>
 
 // --- Configuration ---
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASS";
-const char* mqtt_server = "192.168.1.100"; // Replace with your computer's IP
+const char* ssid = "FAMILIA BATISTA_5G";
+const char* password = "ericabatista1601";
+const char* mqtt_server = "192.168.1.20";
 const int mqtt_port = 1883;
+
 // ----------------------
 
 // Pin definitions
