@@ -77,8 +77,8 @@ void setup() {
   pinMode(LED_RED_PIN, OUTPUT);
   pinMode(LED_GREEN_PIN, OUTPUT);
   pinMode(LED_BLUE_PIN, OUTPUT);
-  // Start with red indicating idle
-  digitalWrite(LED_RED_PIN, HIGH);
+  // Start with all LEDs off
+  digitalWrite(LED_RED_PIN, LOW);
   digitalWrite(LED_GREEN_PIN, LOW);
   digitalWrite(LED_BLUE_PIN, LOW);
 
@@ -100,6 +100,7 @@ void setup() {
       RC522_MOSI_PIN,
       RC522_SS_PIN,
       RC522_RST_PIN);
+  Serial.printf("LED: R=%d G=%d B=%d\n", LED_RED_PIN, LED_GREEN_PIN, LED_BLUE_PIN);
   Serial.printf("RC522 VersionReg: 0x%02X\n", v);
 
   // Run a quick pin/LED diagnostics
