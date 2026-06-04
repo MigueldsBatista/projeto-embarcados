@@ -6,7 +6,7 @@
 #include <ArduinoJson.h>
 
 // --- Configuration ---
-const char* ssid = "FAMILIA BATISTA_5G";
+const char* ssid = "FAMILIA BATISTA_2G";
 const char* password = "ericabatista1601";
 const char* mqtt_server = "192.168.1.20";
 const int mqtt_port = 1883;
