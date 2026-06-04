@@ -23,15 +23,15 @@ A professional web dashboard to manage RFID access control. ESP32 devices scan c
 ### Phase 1: Card Management & CRUD
 **Goal:** Allow users to register, edit, and deactivate RFID cards from the web interface.
 
-- [ ] **Frontend: Card Management View**
-  - [ ] Create `CardsView.vue` container.
-  - [ ] Create `CardList.vue` (dumb component) to display cards.
-  - [ ] Create `AddCardModal.vue` for new card registration.
-  - [ ] Implement `useCards` composable for CRUD operations.
-- [ ] **Backend: Enhanced Card Router**
-  - [ ] Add `PUT /api/cards/{uid}` for updates.
-  - [ ] Add `DELETE /api/cards/{uid}` for removals.
-  - [ ] Implement validation to prevent duplicate UIDs.
+- [x] **Frontend: Card Management View**
+  - [x] Create `CardsView.vue` container.
+  - [x] Create `CardList.vue` (dumb component) to display cards.
+  - [x] Create `AddCardModal.vue` for new card registration.
+  - [x] Implement `useCards` composable for CRUD operations.
+- [x] **Backend: Enhanced Card Router**
+  - [x] Add `PUT /api/cards/{uid}` for updates.
+  - [x] Add `DELETE /api/cards/{uid}` for removals.
+  - [x] Implement validation to prevent duplicate UIDs.
 
 ### Phase 2: Security & Authentication
 **Goal:** Secure the dashboard and MQTT communication.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useDashboard } from '../composables/useDashboard';
-import Navbar from '../components/Navbar.vue';
+import AppNavbar from '../components/AppNavbar.vue';
 import StatCard from '../components/StatCard.vue';
 import LogsTable from '../components/LogsTable.vue';
 import { Activity, ShieldAlert, CreditCard, Loader2 } from 'lucide-vue-next';
@@ -10,7 +10,7 @@ const { logs, summary, cards, isLoading } = useDashboard();
 
 <template>
   <div class="min-h-screen pb-12">
-    <Navbar />
+    <AppNavbar />
 
     <main class="max-w-7xl mx-auto px-4">
       <div v-if="isLoading && !summary" class="flex flex-col items-center justify-center py-24 text-gray-400">

@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import type { Component } from 'vue';
 
 defineProps<{
   title: string;
   value: number | string;
-  icon?: any;
+  icon?: Component;
   colorClass?: string;
 }>();
 </script>

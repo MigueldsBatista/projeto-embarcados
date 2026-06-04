@@ -36,7 +36,7 @@ def test_get_cards_empty():
 def test_create_card():
     response = client.post(
         "/api/cards/",
-        params={"uid": "123456", "name": "Test Card", "role": "admin"}
+        json={"uid": "123456", "name": "Test Card", "role": "admin"}
     )
     assert response.status_code == 200
     data = response.json()
@@ -45,14 +45,39 @@ def test_create_card():
     assert data["role"] == "admin"
     assert "id" in data
 
+def test_create_duplicate_card():
+    client.post("/api/cards/", json={"uid": "123", "name": "Original"})
+    response = client.post("/api/cards/", json={"uid": "123", "name": "Duplicate"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "UID already registered"
+
 def test_get_cards_with_data():
     # Pre-populate
-    client.post("/api/cards/", params={"uid": "111", "name": "C1", "role": "user"})
-    client.post("/api/cards/", params={"uid": "222", "name": "C2", "role": "user"})
+    client.post("/api/cards/", json={"uid": "111", "name": "C1", "role": "user"})
+    client.post("/api/cards/", json={"uid": "222", "name": "C2", "role": "user"})
     
     response = client.get("/api/cards/")
     assert response.status_code == 200
     assert len(response.json()) == 2
+
+def test_update_card():
+    client.post("/api/cards/", json={"uid": "123", "name": "C1", "role": "user"})
+    response = client.put(
+        "/api/cards/123",
+        json={"name": "Updated Name", "role": "admin"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Updated Name"
+    assert data["role"] == "admin"
+
+def test_delete_card():
+    client.post("/api/cards/", json={"uid": "123", "name": "C1"})
+    response = client.delete("/api/cards/123")
+    assert response.status_code == 200
+    
+    response = client.get("/api/cards/")
+    assert len(response.json()) == 0
 
 def test_get_metrics_logs_empty():
     response = client.get("/api/metrics/logs")

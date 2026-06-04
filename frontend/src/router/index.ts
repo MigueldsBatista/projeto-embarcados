@@ -9,6 +9,11 @@ const router = createRouter({
       name: 'dashboard',
       component: DashboardView,
     },
+    {
+      path: '/cards',
+      name: 'cards',
+      component: () => import('../views/CardsView.vue'),
+    },
   ],
 })
 
