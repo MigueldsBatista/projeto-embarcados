@@ -11,7 +11,9 @@ const char* password = "ericabatista1601";
 const char* mqtt_server = "192.168.1.20";
 const int mqtt_port = 1883;
 
-// ----------------------
+const char* tracking_topic_discovery = "tracking/discovery";
+unsigned long lastScanTime = 0;
+const unsigned long scanInterval = 5000; // Escaneia a cada 5 segundos
 
 // Pin definitions
 #ifndef RC522_SCK_PIN
@@ -58,6 +60,34 @@ void setup_wifi() {
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
+}
+
+void scan_tracking_tags() {
+  unsigned long now = millis();
+  if (now - lastScanTime < scanInterval) return;
+  lastScanTime = now;
+
+  Serial.println("Iniciando varredura WiFi para tags...");
+  
+  // Scan assíncrono para não travar o RFID
+  int n = WiFi.scanNetworks(false, false, false, 100); 
+  
+  if (n > 0) {
+    for (int i = 0; i < n; ++i) {
+      String bssid = WiFi.BSSIDstr(i);
+      int rssi = WiFi.RSSI(i);
+      
+      StaticJsonDocument<128> doc;
+      doc["mac"] = bssid;
+      doc["rssi"] = rssi;
+      doc["scanner"] = "esp32-central";
+
+      char buffer[128];
+      serializeJson(doc, buffer);
+      client.publish(tracking_topic_discovery, buffer);
+    }
+  }
+  WiFi.scanDelete();
 }
 
 void mqtt_callback(char* topic, byte* payload, unsigned int length) {
@@ -142,7 +172,7 @@ void setup() {
   SPI.begin(RC522_SCK_PIN, RC522_MISO_PIN, RC522_MOSI_PIN, RC522_SS_PIN);
   rfid.PCD_Init();
   
-  Serial.println("RFID Ready");
+  Serial.println("RFID Ready and WiFi Scanner active");
 }
 
 void loop() {
@@ -151,8 +181,9 @@ void loop() {
   }
   client.loop();
 
+  scan_tracking_tags();
+
   if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
-    delay(50);
     return;
   }
 
@@ -160,11 +191,9 @@ void loop() {
   Serial.print("Scanned UID: ");
   Serial.println(uidStr);
 
-  // Subscribe to the response topic for this specific UID
   String responseTopic = "rfid/responses/" + uidStr;
   client.subscribe(responseTopic.c_str());
 
-  // Publish the scan
   StaticJsonDocument<200> doc;
   doc["uid"] = uidStr;
   char buffer[256];
@@ -174,5 +203,5 @@ void loop() {
   rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();
   
-  delay(1000); // Prevent spamming
+  delay(1000); 
 }

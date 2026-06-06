@@ -14,6 +14,11 @@ const router = createRouter({
       name: 'cards',
       component: () => import('../views/CardsView.vue'),
     },
+    {
+      path: '/tracking',
+      name: 'tracking',
+      component: () => import('../views/TrackingView.vue'),
+    },
   ],
 })
 

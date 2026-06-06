@@ -19,6 +19,9 @@ import { RouterLink } from 'vue-router';
         <RouterLink to="/cards" class="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors" active-class="text-blue-600">
           Cards
         </RouterLink>
+        <RouterLink to="/tracking" class="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors" active-class="text-blue-600">
+          Rastreamento
+        </RouterLink>
         <a href="#" class="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors">Settings</a>
       </div>
     </div>

@@ -12,29 +12,73 @@ MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
 MQTT_TOPIC_SCANS = "rfid/scans"
 MQTT_TOPIC_RESPONSES = "rfid/responses/"
+MQTT_TOPIC_DISCOVERY = "tracking/discovery"
+MQTT_TOPIC_HEARTBEAT = "tracking/heartbeat"
 
 class RFIDMQTTClient:
     def __init__(self):
         self.client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
+        self.discovered_tags = {} # MAC -> {rssi, timestamp}
 
     def on_connect(self, client, userdata, flags, rc, properties):
         logger.info(f"Connected to MQTT Broker with result code {rc}")
         client.subscribe(MQTT_TOPIC_SCANS)
+        client.subscribe(MQTT_TOPIC_DISCOVERY)
+        client.subscribe(MQTT_TOPIC_HEARTBEAT)
 
     def on_message(self, client, userdata, msg):
         try:
             payload = json.loads(msg.payload.decode())
-            uid = payload.get("uid")
-            if not uid:
-                logger.warning("Received message without UID")
-                return
+            topic = msg.topic
 
-            logger.info(f"Processing scan for UID: {uid}")
-            self.process_scan(uid)
+            if topic == MQTT_TOPIC_SCANS:
+                uid = payload.get("uid")
+                if uid:
+                    self.process_scan(uid)
+            elif topic == MQTT_TOPIC_DISCOVERY:
+                mac = payload.get("mac")
+                rssi = payload.get("rssi")
+                scanner = payload.get("scanner", "unknown")
+                if mac:
+                    # Cache para o frontend consultar o que está perto
+                    self.discovered_tags[mac] = {
+                        "rssi": rssi,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    self.process_tracking(mac, rssi, scanner)
+                    # Limpa cache antigo (> 1 min)
+                    self._cleanup_discovery()
+
+    def process_tracking(self, mac, rssi, scanner):
+        db = SessionLocal()
+        try:
+            # Verifica se este MAC pertence a algum aluno
+            card = db.query(Card).filter(Card.tracker_mac == mac).first()
+            if not card:
+                return # Ignora dispositivos não registrados (lixo WiFi)
+
+            # Classifica a zona baseada no RSSI
+            if rssi >= -55:
+                zone = "Very Near"
+            elif rssi >= -75:
+                zone = "Near"
+            else:
+                zone = "Far"
+
+            # Salva o log de rastreamento
+            from .models import TrackingLog
+            log = TrackingLog(mac=mac, rssi=rssi, zone=zone, scanner=scanner)
+            db.add(log)
+            db.commit()
+            logger.info(f"Tracking logged for {card.name}: {zone} ({rssi}dBm)")
+
         except Exception as e:
-            logger.error(f"Error processing MQTT message: {e}")
+            logger.error(f"Error logging tracking: {e}")
+            db.rollback()
+        finally:
+            db.close()
 
     def process_scan(self, uid):
         db = SessionLocal()
