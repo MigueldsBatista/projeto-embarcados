@@ -1,6 +1,10 @@
 import { useQuery } from '@tanstack/vue-query';
 import client from '@/api/client';
-import type { TrackingStatus, DiscoveredTag } from '@/types';
+import type {
+  TrackingBenchmarkState,
+  TrackingStatus,
+  DiscoveredTag,
+} from '@/types';
 
 export function useTracking() {
   const { data: liveTracking, isLoading: isLoadingLive } = useQuery({
@@ -21,10 +25,21 @@ export function useTracking() {
     refetchInterval: 2000, // Atualiza descoberta a cada 2 segundos
   });
 
+  const { data: benchmark, isLoading: isLoadingBenchmark } = useQuery({
+    queryKey: ['tracking', 'benchmark'],
+    queryFn: async () => {
+      const response = await client.get<TrackingBenchmarkState>('/tracking/benchmark');
+      return response.data;
+    },
+    refetchInterval: 3000,
+  });
+
   return {
     liveTracking,
     isLoadingLive,
     discovery,
-    isLoadingDiscovery
+    isLoadingDiscovery,
+    benchmark,
+    isLoadingBenchmark,
   };
 }

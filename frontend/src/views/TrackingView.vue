@@ -1,14 +1,30 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useTracking } from '@/composables/useTracking';
-import { MapPin, Signal, Clock, User } from 'lucide-vue-next';
+import { Activity, MapPin, Signal, Clock, User } from 'lucide-vue-next';
 
-const { liveTracking, isLoadingLive } = useTracking();
+const { liveTracking, isLoadingLive, benchmark } = useTracking();
+
+const benchmarkSummaries = computed(() => benchmark.value?.summaries ?? []);
+const benchmarkPerfPoints = computed(() => benchmark.value?.perf_points ?? []);
+const recentBenchmarkBatches = computed(() => benchmark.value?.recent_batches ?? []);
+const latestPerfByApproach = computed(() => {
+  const latest = new Map<string, { latency_us: number; heap_free: number; n_target: number }>();
+  for (const point of benchmarkPerfPoints.value) {
+    latest.set(point.approach, {
+      latency_us: point.latency_us,
+      heap_free: point.heap_free,
+      n_target: point.n_target,
+    });
+  }
+  return latest;
+});
 
 const getZoneColor = (zone: string) => {
   switch (zone) {
-    case 'Very Near': return 'text-green-500 bg-green-50 border-green-200';
-    case 'Near': return 'text-blue-500 bg-blue-50 border-blue-200';
-    case 'Far': return 'text-yellow-500 bg-yellow-50 border-yellow-200';
+    case 'Perto': return 'text-green-500 bg-green-50 border-green-200';
+    case 'Medio': return 'text-blue-500 bg-blue-50 border-blue-200';
+    case 'Longe': return 'text-yellow-500 bg-yellow-50 border-yellow-200';
     default: return 'text-gray-400 bg-gray-50 border-gray-200';
   }
 };
@@ -18,8 +34,64 @@ const getZoneColor = (zone: string) => {
   <div class="space-y-6">
     <header>
       <h1 class="text-2xl font-bold text-slate-800">Rastreamento em Tempo Real</h1>
-      <p class="text-slate-500">Localização aproximada das crianças via proximidade WiFi.</p>
+      <p class="text-slate-500">Classificação de distância por RSSI com um roteador: Perto, Medio e Longe.</p>
     </header>
+
+    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+      <div class="flex items-center gap-2 mb-4 text-slate-800">
+        <Activity class="h-4 w-4 text-indigo-600" />
+        <h2 class="font-semibold">Benchmark do Rastreamento</h2>
+      </div>
+
+      <div v-if="benchmarkSummaries.length === 0" class="text-sm text-slate-500">
+        Nenhuma telemetria de benchmark recebida ainda em <span class="font-mono">tracking/benchmark/#</span>.
+      </div>
+
+      <div v-else class="space-y-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div v-for="summary in benchmarkSummaries" :key="summary.summary_key" class="rounded-lg border border-slate-200 p-4 bg-slate-50">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold uppercase tracking-wide text-slate-500">{{ summary.approach }}</span>
+              <span class="text-xs text-slate-400">N={{ summary.n_target }}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-sm">
+              <div>
+                <p class="text-slate-400">Latência média</p>
+                <p class="font-semibold text-slate-800">{{ summary.latency_avg_us }} us</p>
+              </div>
+              <div>
+                <p class="text-slate-400">Máxima</p>
+                <p class="font-semibold text-slate-800">{{ summary.latency_max_us }} us</p>
+              </div>
+              <div>
+                <p class="text-slate-400">Heap mínimo</p>
+                <p class="font-semibold text-slate-800">{{ summary.heap_min }}</p>
+              </div>
+              <div>
+                <p class="text-slate-400">Perdas</p>
+                <p class="font-semibold text-slate-800">{{ summary.dropped }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+          <div v-for="approach in ['inefficient', 'circular']" :key="approach" class="rounded-lg border border-dashed border-slate-200 p-3">
+            <p class="font-medium text-slate-700 mb-1">Último ponto {{ approach }}</p>
+            <template v-if="latestPerfByApproach.get(approach)">
+              <p class="text-slate-500">Latência: {{ latestPerfByApproach.get(approach)?.latency_us }} us</p>
+              <p class="text-slate-500">Heap: {{ latestPerfByApproach.get(approach)?.heap_free }}</p>
+              <p class="text-slate-500">Escala: N={{ latestPerfByApproach.get(approach)?.n_target }}</p>
+            </template>
+            <p v-else class="text-slate-400">Sem pontos recebidos.</p>
+          </div>
+        </div>
+
+        <div v-if="recentBenchmarkBatches.length > 0" class="text-xs text-slate-500 pt-1 border-t border-slate-100">
+          Último lote recebido: {{ recentBenchmarkBatches.at(-1)?.samples.length }} amostras.
+        </div>
+      </div>
+    </div>
 
     <div v-if="isLoadingLive" class="flex justify-center py-12">
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
@@ -73,10 +145,9 @@ const getZoneColor = (zone: string) => {
         <Signal class="h-4 w-4" /> Como funciona?
       </h4>
       <p class="text-indigo-700 text-sm leading-relaxed">
-        O sistema mede a força do sinal WiFi (RSSI) emitido pelo Wemos da criança. 
-        <strong>Very Near</strong> significa que a criança está na mesma sala que o scanner. 
-        <strong>Near</strong> indica que ela está nas proximidades (corredor/pátio). 
-        <strong>Far</strong> indica que o sinal está fraco e ela pode estar se afastando.
+        O sistema mede a força do sinal WiFi (RSSI) emitido pela tag da criança e classifica em três níveis.
+        <strong>Perto</strong> indica sinal forte, <strong>Medio</strong> indica distância intermediária,
+        e <strong>Longe</strong> indica sinal fraco.
       </p>
     </div>
   </div>

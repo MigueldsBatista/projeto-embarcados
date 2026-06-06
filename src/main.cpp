@@ -8,11 +8,42 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <stdlib.h>
 
 // --- CONFIGURAÇÃO ---
 char mqtt_server[40] = "192.168.1.20"; // Valor padrão
 const int mqtt_port = 1883;
 const char* tracking_topic_discovery = "tracking/discovery";
+const char* tracking_topic_benchmark_data = "tracking/benchmark/data";
+const char* tracking_topic_benchmark_perf = "tracking/benchmark/perf";
+const char* tracking_topic_benchmark_summary = "tracking/benchmark/summary";
+
+#ifndef TRACKING_BENCHMARK_ENABLED
+#define TRACKING_BENCHMARK_ENABLED 0
+#endif
+
+#ifndef TRACKING_BENCHMARK_WINDOW_SIZE
+#define TRACKING_BENCHMARK_WINDOW_SIZE 256
+#endif
+
+#ifndef TRACKING_BENCHMARK_RING_CAPACITY
+#define TRACKING_BENCHMARK_RING_CAPACITY 512
+#endif
+
+#ifndef TRACKING_BENCHMARK_BATCH_SIZE
+#define TRACKING_BENCHMARK_BATCH_SIZE 20
+#endif
+
+#ifndef TRACKING_BENCHMARK_NETWORK_DELAY_MS
+#define TRACKING_BENCHMARK_NETWORK_DELAY_MS 1
+#endif
+
+#ifndef TRACKING_BENCHMARK_SNAPSHOT_LIMIT
+#define TRACKING_BENCHMARK_SNAPSHOT_LIMIT 24
+#endif
+
+const uint32_t kTrackingBenchmarkScales[] = {100, 5000, 20000};
+const size_t kTrackingBenchmarkScaleCount = sizeof(kTrackingBenchmarkScales) / sizeof(kTrackingBenchmarkScales[0]);
 
 unsigned long lastScanTime = 0;
 const unsigned long scanInterval = 5000; 
@@ -35,9 +66,321 @@ MFRC522 rfid(RC522_SS_PIN, RC522_RST_PIN);
 WiFiClient espClient;
 PubSubClient client(espClient);
 Preferences preferences;
+bool trackingBenchmarkRan = false;
+
+enum class TrackingBenchmarkApproach : uint8_t {
+  Inefficient = 0,
+  Circular = 1
+};
+
+struct TrackingSample {
+  char mac[18];
+  int rssi;
+  char scanner[20];
+  uint32_t timestampUs;
+};
+
+struct TrackingPerfStats {
+  uint32_t targetN = 0;
+  uint32_t processed = 0;
+  uint32_t minLatencyUs = UINT32_MAX;
+  uint32_t maxLatencyUs = 0;
+  uint64_t sumLatencyUs = 0;
+  uint32_t minHeap = UINT32_MAX;
+  uint32_t maxHeap = 0;
+  uint32_t dropped = 0;
+};
+
+class TrackingInefficientWindow {
+ public:
+  explicit TrackingInefficientWindow(size_t maxSamples) : maxSamples_(maxSamples) {}
+
+  ~TrackingInefficientWindow() {
+    clear();
+  }
+
+  bool push(const TrackingSample& sample) {
+    size_t nextSize = size_ < maxSamples_ ? size_ + 1 : maxSamples_;
+    TrackingSample* next = static_cast<TrackingSample*>(malloc(nextSize * sizeof(TrackingSample)));
+    if (!next) {
+      return false;
+    }
+
+    if (size_ < maxSamples_) {
+      for (size_t i = 0; i < size_; ++i) {
+        next[i] = data_[i];
+      }
+      next[size_] = sample;
+    } else {
+      for (size_t i = 1; i < size_; ++i) {
+        next[i - 1] = data_[i];
+      }
+      next[nextSize - 1] = sample;
+    }
+
+    free(data_);
+    data_ = next;
+    size_ = nextSize;
+    return true;
+  }
+
+  void clear() {
+    free(data_);
+    data_ = nullptr;
+    size_ = 0;
+  }
+
+ private:
+  TrackingSample* data_ = nullptr;
+  size_t size_ = 0;
+  size_t maxSamples_ = 0;
+};
+
+class TrackingRingBuffer {
+ public:
+  bool push(const TrackingSample& sample) {
+    if (count_ == TRACKING_BENCHMARK_RING_CAPACITY) {
+      tail_ = (tail_ + 1) % TRACKING_BENCHMARK_RING_CAPACITY;
+      --count_;
+      ++dropped_;
+    }
+    data_[head_] = sample;
+    head_ = (head_ + 1) % TRACKING_BENCHMARK_RING_CAPACITY;
+    ++count_;
+    return true;
+  }
+
+  bool pop(TrackingSample& sample) {
+    if (count_ == 0) {
+      return false;
+    }
+    sample = data_[tail_];
+    tail_ = (tail_ + 1) % TRACKING_BENCHMARK_RING_CAPACITY;
+    --count_;
+    return true;
+  }
+
+  size_t size() const {
+    return count_;
+  }
+
+  uint32_t dropped() const {
+    return dropped_;
+  }
+
+  void clear() {
+    head_ = 0;
+    tail_ = 0;
+    count_ = 0;
+    dropped_ = 0;
+  }
+
+ private:
+  TrackingSample data_[TRACKING_BENCHMARK_RING_CAPACITY];
+  size_t head_ = 0;
+  size_t tail_ = 0;
+  size_t count_ = 0;
+  uint32_t dropped_ = 0;
+};
+
+TrackingInefficientWindow trackingInefficientWindow(TRACKING_BENCHMARK_WINDOW_SIZE);
+TrackingRingBuffer trackingRingBuffer;
 
 // Flag para salvar config
 bool shouldSaveConfig = false;
+
+const char* trackingBenchmarkApproachToStr(TrackingBenchmarkApproach approach) {
+  return approach == TrackingBenchmarkApproach::Inefficient ? "inefficient" : "circular";
+}
+
+void copyToFixedBuffer(char* destination, size_t destinationSize, const String& value) {
+  value.toCharArray(destination, destinationSize);
+}
+
+TrackingSample buildTrackingSample(const String& mac, int rssi, const char* scannerLabel) {
+  TrackingSample sample;
+  copyToFixedBuffer(sample.mac, sizeof(sample.mac), mac);
+  copyToFixedBuffer(sample.scanner, sizeof(sample.scanner), String(scannerLabel));
+  sample.rssi = rssi;
+  sample.timestampUs = micros();
+  return sample;
+}
+
+void publishTrackingBenchmarkPerf(TrackingBenchmarkApproach approach, const TrackingPerfStats& stats, uint32_t latencyUs, uint32_t index) {
+  StaticJsonDocument<256> doc;
+  doc["approach"] = trackingBenchmarkApproachToStr(approach);
+  doc["n_target"] = stats.targetN;
+  doc["index"] = index;
+  doc["latency_us"] = latencyUs;
+  doc["heap_free"] = ESP.getFreeHeap();
+
+  char payload[256];
+  size_t len = serializeJson(doc, payload);
+  client.publish(tracking_topic_benchmark_perf, payload, len);
+}
+
+void publishTrackingBenchmarkData(TrackingBenchmarkApproach approach, uint32_t targetN, TrackingSample* samples, size_t count, uint32_t batchIndex) {
+  StaticJsonDocument<1024> doc;
+  doc["approach"] = trackingBenchmarkApproachToStr(approach);
+  doc["n_target"] = targetN;
+  doc["batch"] = batchIndex;
+  JsonArray rows = doc.createNestedArray("samples");
+  for (size_t i = 0; i < count; ++i) {
+    JsonObject row = rows.createNestedObject();
+    row["mac"] = samples[i].mac;
+    row["rssi"] = samples[i].rssi;
+    row["scanner"] = samples[i].scanner;
+    row["t_us"] = samples[i].timestampUs;
+  }
+
+  char payload[1024];
+  size_t len = serializeJson(doc, payload);
+  client.publish(tracking_topic_benchmark_data, payload, len);
+}
+
+void publishTrackingBenchmarkSummary(TrackingBenchmarkApproach approach, const TrackingPerfStats& stats) {
+  StaticJsonDocument<384> doc;
+  doc["approach"] = trackingBenchmarkApproachToStr(approach);
+  doc["n_target"] = stats.targetN;
+  doc["processed"] = stats.processed;
+  doc["latency_min_us"] = stats.minLatencyUs;
+  doc["latency_max_us"] = stats.maxLatencyUs;
+  doc["latency_avg_us"] = stats.processed ? (stats.sumLatencyUs / stats.processed) : 0;
+  doc["heap_min"] = stats.minHeap;
+  doc["heap_max"] = stats.maxHeap;
+  doc["dropped"] = stats.dropped;
+
+  char payload[384];
+  size_t len = serializeJson(doc, payload);
+  client.publish(tracking_topic_benchmark_summary, payload, len);
+
+  Serial.printf(
+      "[TRACKING BENCH] approach=%s N=%lu processed=%lu min=%luus avg=%lluus max=%luus heapMin=%lu heapMax=%lu dropped=%lu\n",
+      trackingBenchmarkApproachToStr(approach),
+      static_cast<unsigned long>(stats.targetN),
+      static_cast<unsigned long>(stats.processed),
+      static_cast<unsigned long>(stats.minLatencyUs),
+      static_cast<unsigned long long>(stats.processed ? (stats.sumLatencyUs / stats.processed) : 0),
+      static_cast<unsigned long>(stats.maxLatencyUs),
+      static_cast<unsigned long>(stats.minHeap),
+      static_cast<unsigned long>(stats.maxHeap),
+      static_cast<unsigned long>(stats.dropped));
+}
+
+void updateTrackingBenchmarkStats(TrackingPerfStats& stats, uint32_t latencyUs) {
+  const uint32_t heap = ESP.getFreeHeap();
+  if (latencyUs < stats.minLatencyUs) stats.minLatencyUs = latencyUs;
+  if (latencyUs > stats.maxLatencyUs) stats.maxLatencyUs = latencyUs;
+  stats.sumLatencyUs += latencyUs;
+  if (heap < stats.minHeap) stats.minHeap = heap;
+  if (heap > stats.maxHeap) stats.maxHeap = heap;
+  ++stats.processed;
+  Serial.printf("Tracking bench | Latencia: %lu us | Heap Livre: %u bytes\n", latencyUs, heap);
+}
+
+TrackingSample sampleFromSnapshot(const TrackingSample* snapshot, size_t snapshotCount, uint32_t index) {
+  if (snapshotCount == 0) {
+    return buildTrackingSample(WiFi.macAddress(), WiFi.RSSI(), "esp32-central");
+  }
+
+  TrackingSample sample = snapshot[index % snapshotCount];
+  sample.timestampUs = micros();
+  return sample;
+}
+
+void drainTrackingRingBuffer(uint32_t targetN, uint32_t& batchIndex) {
+  TrackingSample batch[TRACKING_BENCHMARK_BATCH_SIZE];
+  while (trackingRingBuffer.size() > 0) {
+    size_t consumed = 0;
+    while (consumed < TRACKING_BENCHMARK_BATCH_SIZE) {
+      TrackingSample sample;
+      if (!trackingRingBuffer.pop(sample)) {
+        break;
+      }
+      batch[consumed++] = sample;
+    }
+
+    if (consumed == 0) {
+      break;
+    }
+
+    publishTrackingBenchmarkData(TrackingBenchmarkApproach::Circular, targetN, batch, consumed, batchIndex++);
+    client.loop();
+    delay(TRACKING_BENCHMARK_NETWORK_DELAY_MS);
+  }
+}
+
+void runTrackingInefficientBenchmark(const TrackingSample* snapshot, size_t snapshotCount, uint32_t targetN) {
+  TrackingPerfStats stats;
+  stats.targetN = targetN;
+  trackingInefficientWindow.clear();
+
+  TrackingSample single[1];
+  for (uint32_t i = 0; i < targetN; ++i) {
+    TrackingSample sample = sampleFromSnapshot(snapshot, snapshotCount, i);
+    unsigned long start = micros();
+    bool ok = trackingInefficientWindow.push(sample);
+    unsigned long duration = micros() - start;
+
+    if (!ok) {
+      ++stats.dropped;
+      continue;
+    }
+
+    updateTrackingBenchmarkStats(stats, duration);
+    if ((i % 100) == 0) {
+      publishTrackingBenchmarkPerf(TrackingBenchmarkApproach::Inefficient, stats, duration, i);
+    }
+
+    single[0] = sample;
+    publishTrackingBenchmarkData(TrackingBenchmarkApproach::Inefficient, targetN, single, 1, i);
+    client.loop();
+    delay(TRACKING_BENCHMARK_NETWORK_DELAY_MS);
+  }
+
+  publishTrackingBenchmarkSummary(TrackingBenchmarkApproach::Inefficient, stats);
+}
+
+void runTrackingCircularBenchmark(const TrackingSample* snapshot, size_t snapshotCount, uint32_t targetN) {
+  TrackingPerfStats stats;
+  stats.targetN = targetN;
+  trackingRingBuffer.clear();
+
+  uint32_t batchIndex = 0;
+  for (uint32_t i = 0; i < targetN; ++i) {
+    TrackingSample sample = sampleFromSnapshot(snapshot, snapshotCount, i);
+    unsigned long start = micros();
+    trackingRingBuffer.push(sample);
+    unsigned long duration = micros() - start;
+
+    updateTrackingBenchmarkStats(stats, duration);
+    if ((i % 100) == 0) {
+      publishTrackingBenchmarkPerf(TrackingBenchmarkApproach::Circular, stats, duration, i);
+    }
+
+    if (((i + 1) % TRACKING_BENCHMARK_BATCH_SIZE) == 0) {
+      drainTrackingRingBuffer(targetN, batchIndex);
+    }
+    client.loop();
+  }
+
+  drainTrackingRingBuffer(targetN, batchIndex);
+  stats.dropped = trackingRingBuffer.dropped();
+  publishTrackingBenchmarkSummary(TrackingBenchmarkApproach::Circular, stats);
+}
+
+void runTrackingBenchmark(const TrackingSample* snapshot, size_t snapshotCount) {
+  Serial.printf("Iniciando benchmark de rastreamento com %u amostras visiveis\n", static_cast<unsigned>(snapshotCount));
+  for (size_t i = 0; i < kTrackingBenchmarkScaleCount; ++i) {
+    const uint32_t targetN = kTrackingBenchmarkScales[i];
+    Serial.printf("\n=== Tracking Benchmark Ineficiente | N=%lu ===\n", static_cast<unsigned long>(targetN));
+    runTrackingInefficientBenchmark(snapshot, snapshotCount, targetN);
+
+    Serial.printf("\n=== Tracking Benchmark Circular | N=%lu ===\n", static_cast<unsigned long>(targetN));
+    runTrackingCircularBenchmark(snapshot, snapshotCount, targetN);
+  }
+  Serial.println("Benchmark de rastreamento concluido.");
+}
 
 void saveConfigCallback() {
   Serial.println("Configuração precisa ser salva");
@@ -80,12 +423,18 @@ void scan_tracking_tags() {
   lastScanTime = now;
 
   Serial.println("Iniciando varredura WiFi para tags...");
-  int n = WiFi.scanNetworks(false, false, false, 100); 
+  int n = WiFi.scanNetworks(false, false, false, 100);
+  TrackingSample benchmarkSnapshot[TRACKING_BENCHMARK_SNAPSHOT_LIMIT];
+  size_t benchmarkSnapshotCount = 0;
   
   if (n > 0) {
     for (int i = 0; i < n; ++i) {
       String bssid = WiFi.BSSIDstr(i);
       int rssi = WiFi.RSSI(i);
+
+      if (benchmarkSnapshotCount < TRACKING_BENCHMARK_SNAPSHOT_LIMIT) {
+        benchmarkSnapshot[benchmarkSnapshotCount++] = buildTrackingSample(bssid, rssi, "esp32-central");
+      }
       
       StaticJsonDocument<128> doc;
       doc["mac"] = bssid;
@@ -98,6 +447,13 @@ void scan_tracking_tags() {
     }
   }
   WiFi.scanDelete();
+
+#if TRACKING_BENCHMARK_ENABLED
+  if (!trackingBenchmarkRan) {
+    runTrackingBenchmark(benchmarkSnapshot, benchmarkSnapshotCount);
+    trackingBenchmarkRan = true;
+  }
+#endif
 }
 
 void mqtt_callback(char* topic, byte* payload, unsigned int length) {
