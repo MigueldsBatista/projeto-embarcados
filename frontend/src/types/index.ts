@@ -27,6 +27,7 @@ export interface AccessLog {
   uid: string;
   status: 'authorized' | 'unknown' | 'inactive';
   timestamp: string;
+  person_name?: string;
 }
 
 export interface Summary {

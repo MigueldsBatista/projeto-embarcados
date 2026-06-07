@@ -25,6 +25,7 @@ const getStatusClass = (status: string) => {
       <thead>
         <tr class="bg-gray-50 border-b border-gray-100">
           <th class="p-4 font-semibold text-sm text-gray-600">Timestamp</th>
+          <th class="p-4 font-semibold text-sm text-gray-600">Person</th>
           <th class="p-4 font-semibold text-sm text-gray-600">UID</th>
           <th class="p-4 font-semibold text-sm text-gray-600">Status</th>
         </tr>
@@ -32,6 +33,7 @@ const getStatusClass = (status: string) => {
       <tbody>
         <tr v-for="log in logs" :key="log.id" class="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
           <td class="p-4 text-sm">{{ formatDate(log.timestamp) }}</td>
+          <td class="p-4 text-sm">{{ log.person_name || 'Desconhecido' }}</td>
           <td class="p-4 text-sm font-mono text-gray-500">{{ log.uid }}</td>
           <td class="p-4 text-sm">
             <span :class="['px-2.5 py-1 rounded-full text-xs font-medium capitalize', getStatusClass(log.status)]">
