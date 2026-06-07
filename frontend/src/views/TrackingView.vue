@@ -2,6 +2,9 @@
 import { computed } from 'vue';
 import { useTracking } from '@/composables/useTracking';
 import { Activity, MapPin, Signal, Clock, User } from 'lucide-vue-next';
+import BenchmarkSummaryChart from '@/components/BenchmarkSummaryChart.vue';
+import BenchmarkPerfChart from '@/components/BenchmarkPerfChart.vue';
+import BenchmarkDataChart from '@/components/BenchmarkDataChart.vue';
 
 const { liveTracking, isLoadingLive, benchmark } = useTracking();
 
@@ -47,7 +50,8 @@ const getZoneColor = (zone: string) => {
         Nenhuma telemetria de benchmark recebida ainda em <span class="font-mono">tracking/benchmark/#</span>.
       </div>
 
-      <div v-else class="space-y-3">
+      <div v-else class="space-y-6">
+        <!-- Sumários numéricos -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div v-for="summary in benchmarkSummaries" :key="summary.summary_key" class="rounded-lg border border-slate-200 p-4 bg-slate-50">
             <div class="flex items-center justify-between mb-2">
@@ -75,20 +79,22 @@ const getZoneColor = (zone: string) => {
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div v-for="approach in ['inefficient', 'circular']" :key="approach" class="rounded-lg border border-dashed border-slate-200 p-3">
-            <p class="font-medium text-slate-700 mb-1">Último ponto {{ approach }}</p>
-            <template v-if="latestPerfByApproach.get(approach)">
-              <p class="text-slate-500">Latência: {{ latestPerfByApproach.get(approach)?.latency_us }} us</p>
-              <p class="text-slate-500">Heap: {{ latestPerfByApproach.get(approach)?.heap_free }}</p>
-              <p class="text-slate-500">Escala: N={{ latestPerfByApproach.get(approach)?.n_target }}</p>
-            </template>
-            <p v-else class="text-slate-400">Sem pontos recebidos.</p>
-          </div>
+        <!-- Gráfico de Performance: comparativo por escala -->
+        <div class="pt-4 border-t border-slate-100">
+          <h3 class="text-sm font-semibold text-slate-600 mb-3">Gráfico de Performance — Latência Média por Volume</h3>
+          <BenchmarkSummaryChart :summaries="benchmarkSummaries" />
         </div>
 
-        <div v-if="recentBenchmarkBatches.length > 0" class="text-xs text-slate-500 pt-1 border-t border-slate-100">
-          Último lote recebido: {{ recentBenchmarkBatches.at(-1)?.samples.length }} amostras.
+        <!-- Gráfico de Performance: evolução temporal da latência -->
+        <div class="pt-4 border-t border-slate-100">
+          <h3 class="text-sm font-semibold text-slate-600 mb-3">Evolução da Latência por Ponto de Medição</h3>
+          <BenchmarkPerfChart :perf-points="benchmarkPerfPoints" />
+        </div>
+
+        <!-- Gráfico de Dados: amostras RSSI do último lote -->
+        <div class="pt-4 border-t border-slate-100">
+          <h3 class="text-sm font-semibold text-slate-600 mb-3">Gráfico de Dados — Amostras RSSI do Último Lote MQTT</h3>
+          <BenchmarkDataChart :batches="recentBenchmarkBatches" />
         </div>
       </div>
     </div>
