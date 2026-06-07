@@ -3,12 +3,24 @@ import { ref } from 'vue';
 import axios from 'axios';
 import { Plus, Loader2 } from 'lucide-vue-next';
 import { useCards } from '../composables/useCards';
+import { useCreateCard } from '../composables/useCreateCard';
+import { useUpdateCard } from '../composables/useUpdateCard';
+import { useDeleteCard } from '../composables/useDeleteCard';
 import AppNavbar from '../components/AppNavbar.vue';
 import CardList from '../components/CardList.vue';
 import AddCardModal from '../components/AddCardModal.vue';
 import type { Card } from '../types';
 
-const { cards, isLoading, isCreating, isUpdating, createCard, updateCard, deleteCard } = useCards();
+const { data: cards, isLoading } = useCards();
+const createMutation = useCreateCard();
+const updateMutation = useUpdateCard();
+const deleteMutation = useDeleteCard();
+
+const isCreating = createMutation.isPending;
+const isUpdating = updateMutation.isPending;
+const createCard = createMutation.mutateAsync;
+const updateCard = updateMutation.mutateAsync;
+const deleteCard = deleteMutation.mutateAsync;
 
 const showModal = ref(false);
 const editingCard = ref<Card | null>(null);

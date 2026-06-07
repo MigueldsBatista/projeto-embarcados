@@ -19,6 +19,11 @@ const router = createRouter({
       name: 'tracking',
       component: () => import('../views/TrackingView.vue'),
     },
+    {
+      path: '/scanners',
+      name: 'scanners',
+      component: () => import('../views/ScannersView.vue'),
+    },
   ],
 })
 

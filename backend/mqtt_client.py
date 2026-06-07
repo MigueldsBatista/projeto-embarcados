@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 import paho.mqtt.client as mqtt
 from .database import SessionLocal
-from .models import Card, AccessLog
+from .models import Card, AccessLog, Scanner, TrackingLog
 import logging
 
 # Configure logging
@@ -62,9 +62,20 @@ class RFIDMQTTClient:
         for mac in to_delete:
             del self.discovered_tags[mac]
 
-    def process_tracking(self, mac, rssi, scanner):
+    def process_tracking(self, mac, rssi, scanner_id):
         db = SessionLocal()
         try:
+            # Auto-registro do scanner
+            scanner = db.query(Scanner).filter(Scanner.identifier == scanner_id).first()
+            if not scanner:
+                scanner = Scanner(identifier=scanner_id, name=f"Scanner {scanner_id}")
+                db.add(scanner)
+                db.commit()
+                logger.info(f"New scanner registered: {scanner_id}")
+            else:
+                scanner.last_seen = datetime.now()
+                db.commit()
+
             # Verifica se este MAC pertence a algum aluno
             card = db.query(Card).filter(Card.tracker_mac == mac).first()
             if not card:
@@ -79,11 +90,10 @@ class RFIDMQTTClient:
                 zone = "Far"
 
             # Salva o log de rastreamento
-            from .models import TrackingLog
-            log = TrackingLog(mac=mac, rssi=rssi, zone=zone, scanner=scanner)
+            log = TrackingLog(mac=mac, rssi=rssi, zone=zone, scanner=scanner_id)
             db.add(log)
             db.commit()
-            logger.info(f"Tracking logged for {card.name}: {zone} ({rssi}dBm)")
+            logger.info(f"Tracking logged for {card.name}: {zone} ({rssi}dBm) via {scanner_id}")
 
         except Exception as e:
             logger.error(f"Error logging tracking: {e}")

@@ -2,7 +2,7 @@
 import { ref, watch, computed } from 'vue';
 import { X, Wifi, Search } from 'lucide-vue-next';
 import type { Card } from '../types';
-import { useTracking } from '../composables/useTracking';
+import { useDiscovery } from '../composables/useDiscovery';
 
 const props = defineProps<{
   show: boolean;
@@ -15,7 +15,7 @@ const emit = defineEmits<{
   (e: 'submit', data: Partial<Card>): void;
 }>();
 
-const { discovery } = useTracking();
+const { data: discovery } = useDiscovery();
 
 const form = ref({
   uid: '',
@@ -65,7 +65,7 @@ const handleSubmit = () => {
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200 my-auto">
       <div class="p-6 border-b border-gray-100 flex justify-between items-center">
         <h2 class="text-xl font-bold text-gray-900">
-          {{ editingCard ? 'Editar Aluno' : 'Novo Cadastro' }}
+          {{ editingCard ? 'Edit Student' : 'New Registration' }}
         </h2>
         <button @click="emit('close')" class="text-gray-400 hover:text-gray-600">
           <X class="w-6 h-6" />
@@ -74,7 +74,7 @@ const handleSubmit = () => {
 
       <form @submit.prevent="handleSubmit" class="p-6 space-y-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">UID do Cartão RFID</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">RFID Card UID</label>
           <input v-model="form.uid" type="text" required 
                  :disabled="!!editingCard"
                  class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none disabled:bg-gray-50 disabled:text-gray-500 font-mono"
@@ -82,26 +82,26 @@ const handleSubmit = () => {
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Nome da Criança</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Student Name</label>
           <input v-model="form.name" type="text" required 
                  class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                 placeholder="e.g. Enzo Silva" />
+                 placeholder="e.g. John Doe" />
         </div>
 
         <div class="p-4 bg-slate-50 border border-slate-100 rounded-xl space-y-3">
           <div class="flex items-center gap-2 text-sm font-bold text-slate-700">
             <Wifi class="h-4 w-4 text-blue-500" />
-            Vincular Tag WiFi (Rastreador)
+            Link WiFi Tag (Tracker)
           </div>
           
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">MAC do Wemos Próximo</label>
+            <label class="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Nearby Wemos MAC</label>
             <div class="relative">
               <select v-model="form.tracker_mac" 
                       class="w-full px-4 py-2 pr-10 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white appearance-none">
-                <option value="">Nenhum rastreador vinculado</option>
+                <option value="">No tracker linked</option>
                 <option v-for="tag in discoveredOptions" :key="tag.mac" :value="tag.mac">
-                  {{ tag.mac }} (Sinal: {{ tag.rssi }} dBm)
+                  {{ tag.mac }} (Signal: {{ tag.rssi }} dBm)
                 </option>
               </select>
               <div class="absolute right-3 top-2.5 pointer-events-none">
@@ -109,7 +109,7 @@ const handleSubmit = () => {
               </div>
             </div>
             <p v-if="discoveredOptions.length === 0" class="text-[10px] text-slate-400 mt-1 italic">
-              Ligue o Wemos da criança agora para ele aparecer na lista...
+              Turn on the student's Wemos now to see it appear in the list...
             </p>
           </div>
         </div>
@@ -127,18 +127,18 @@ const handleSubmit = () => {
           <div class="flex items-center space-x-2 pt-6">
             <input v-model="form.is_active" type="checkbox" id="is_active" 
                    class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
-            <label for="is_active" class="text-sm font-medium text-gray-700">Ativo</label>
+            <label for="is_active" class="text-sm font-medium text-gray-700">Active</label>
           </div>
         </div>
 
         <div class="pt-4 flex space-x-3">
           <button type="button" @click="emit('close')" 
                   class="flex-1 px-4 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
-            Cancelar
+            Cancel
           </button>
           <button type="submit" :disabled="loading"
                   class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
-            {{ loading ? 'Salvando...' : (editingCard ? 'Atualizar' : 'Cadastrar') }}
+            {{ loading ? 'Saving...' : (editingCard ? 'Update' : 'Register') }}
           </button>
         </div>
       </form>
