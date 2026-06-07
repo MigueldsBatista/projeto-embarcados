@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 import paho.mqtt.client as mqtt
 from .database import SessionLocal
 from .models import Card, AccessLog
@@ -50,6 +51,16 @@ class RFIDMQTTClient:
                     self.process_tracking(mac, rssi, scanner)
                     # Limpa cache antigo (> 1 min)
                     self._cleanup_discovery()
+        except Exception as e:
+            logger.error(f"Error processing MQTT message: {e}")
+
+    def _cleanup_discovery(self):
+        from datetime import datetime as dt, timedelta
+        now = dt.now()
+        to_delete = [mac for mac, data in self.discovered_tags.items() 
+                     if dt.fromisoformat(data["timestamp"]) < now - timedelta(minutes=1)]
+        for mac in to_delete:
+            del self.discovered_tags[mac]
 
     def process_tracking(self, mac, rssi, scanner):
         db = SessionLocal()

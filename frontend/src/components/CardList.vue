@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Trash2, Edit2, Shield, User, Power } from 'lucide-vue-next';
+import { Trash2, Edit2, Shield, User, Power, Wifi } from 'lucide-vue-next';
 import type { Card } from '../types';
 
 defineProps<{
@@ -23,6 +23,7 @@ const getRoleClass = (role: string) => {
       <thead>
         <tr class="bg-gray-50 border-b border-gray-100">
           <th class="p-4 font-semibold text-sm text-gray-600">Card Info</th>
+          <th class="p-4 font-semibold text-sm text-gray-600 text-center">Tracker</th>
           <th class="p-4 font-semibold text-sm text-gray-600">Role</th>
           <th class="p-4 font-semibold text-sm text-gray-600">Status</th>
           <th class="p-4 font-semibold text-sm text-gray-600 text-right">Actions</th>
@@ -35,6 +36,13 @@ const getRoleClass = (role: string) => {
               <span class="text-sm font-medium text-gray-900">{{ card.name }}</span>
               <span class="text-xs text-gray-500 font-mono">{{ card.uid }}</span>
             </div>
+          </td>
+          <td class="p-4 text-center">
+            <div v-if="card.tracker_mac" class="flex flex-col items-center justify-center text-blue-600" :title="`MAC: ${card.tracker_mac}`">
+              <Wifi class="w-4 h-4" />
+              <span class="text-[9px] font-mono mt-0.5">{{ card.tracker_mac.split(':').slice(-2).join(':') }}</span>
+            </div>
+            <span v-else class="text-gray-300 text-xs">—</span>
           </td>
           <td class="p-4">
             <span :class="['inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize', getRoleClass(card.role)]">

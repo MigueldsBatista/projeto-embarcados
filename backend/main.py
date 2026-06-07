@@ -6,13 +6,26 @@ from . import models
 from .mqtt_client import mqtt_client
 from .routers import cards, metrics, tracking
 
-# ... (tables metadata)
+# Create database tables
+models.Base.metadata.create_all(bind=engine)
 
-# ... (lifespan)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Start MQTT client
+    mqtt_client.start()
+    yield
+    # Shutdown: Stop MQTT client
+    mqtt_client.stop()
 
 app = FastAPI(title="RFID Dashboard API", lifespan=lifespan)
 
-# ... (cors middleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(cards.router)
 app.include_router(metrics.router)

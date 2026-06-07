@@ -45,19 +45,36 @@ void setup_wifi_manager() {
   WiFiManagerParameter custom_mqtt_server("server", "IP do Broker MQTT", mqtt_server, 40);
   WiFiManager wifiManager;
 
+  // Gerar nome único para o AP (WemosTag-XXXX)
+  String apName = "WemosTag-" + WiFi.macAddress().substring(WiFi.macAddress().length() - 5);
+  apName.replace(":", ""); // Remove o último ':' se necessário para ficar limpo
+  
   // Callback de salvamento
   wifiManager.setSaveConfigCallback(saveConfigCallback);
   wifiManager.addParameter(&custom_mqtt_server);
 
-  // Tenta conectar, se falhar abre o AP "WemosTag-Config"
-  if (!wifiManager.autoConnect("WemosTag-Config")) {
+  // Tenta conectar, se falhar abre o AP único
+  if (!wifiManager.autoConnect(apName.c_str())) {
     Serial.println("Falha ao conectar e timeout do portal atingido");
     delay(3000);
     ESP.restart();
   }
 
   // Se chegou aqui, conectou no WiFi
-  Serial.println("WiFi conectado!");
+  Serial.println("");
+  Serial.println("====================================");
+  Serial.println("WiFi CONECTADO COM SUCESSO!");
+  
+  // GARANTIR QUE O AP CONTINUE ATIVO PARA O ESP32 ESCANEAR
+  // Isso permite que o Scanner veja o BSSID desta placa mesmo se ela estiver no WiFi
+  WiFi.mode(WIFI_AP_STA); 
+  
+  Serial.print("IP obtido: ");
+  Serial.println(WiFi.localIP());
+  Serial.print("MAC Address: ");
+  Serial.println(WiFi.macAddress());
+  Serial.println("====================================");
+  
   strcpy(mqtt_server, custom_mqtt_server.getValue());
 
   // Salva o novo IP se necessário
@@ -94,7 +111,14 @@ void reconnect() {
 }
 
 void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); // Turn off (Active LOW)
+  
   Serial.begin(115200);
+  Serial.println("");
+  Serial.print("Motivo do último Reset: ");
+  Serial.println(ESP.getResetReason());
+  
   setup_wifi_manager();
   client.setServer(mqtt_server, 1883);
 }
@@ -117,9 +141,18 @@ void loop() {
 
     char buffer[128];
     serializeJson(doc, buffer);
-    client.publish(mqtt_topic_heartbeat, buffer);
     
-    Serial.print("Heartbeat enviado: ");
-    Serial.println(buffer);
+    // Pisca o LED para confirmar emissão física
+    digitalWrite(LED_BUILTIN, LOW); 
+    
+    if (client.publish(mqtt_topic_heartbeat, buffer)) {
+      Serial.print("[MQTT] Heartbeat enviado: ");
+      Serial.println(buffer);
+    } else {
+      Serial.println("[MQTT] ERRO ao enviar heartbeat!");
+    }
+    
+    delay(100);
+    digitalWrite(LED_BUILTIN, HIGH);
   }
 }
