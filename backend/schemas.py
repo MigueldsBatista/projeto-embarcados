@@ -35,3 +35,29 @@ class TrackingLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ScannerBase(BaseModel):
+    identifier: str
+    name: str
+
+class ScannerCreate(ScannerBase):
+    pass
+
+class ScannerUpdate(BaseModel):
+    name: Optional[str] = None
+
+class ScannerResponse(ScannerBase):
+    id: int
+    last_seen: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+
+class AccessLogResponse(BaseModel):
+    id: int
+    uid: str
+    status: str
+    timestamp: datetime
+    person_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
