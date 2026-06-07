@@ -10,7 +10,7 @@ import { RouterLink } from 'vue-router';
         <div class="bg-blue-600 p-1.5 rounded-lg text-white">
           <Cpu class="w-5 h-5" />
         </div>
-        <span class="text-xl font-bold tracking-tight">RFID Dashboard</span>
+        <span class="text-xl font-bold tracking-tight">SafeKid</span>
       </RouterLink>
       <div class="flex items-center space-x-6">
         <RouterLink to="/" class="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors" active-class="text-blue-600">
@@ -20,7 +20,10 @@ import { RouterLink } from 'vue-router';
           Cards
         </RouterLink>
         <RouterLink to="/tracking" class="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors" active-class="text-blue-600">
-          Rastreamento
+          Tracking
+        </RouterLink>
+        <RouterLink to="/scanners" class="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors" active-class="text-blue-600">
+          Scanners
         </RouterLink>
         <a href="#" class="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors">Settings</a>
       </div>

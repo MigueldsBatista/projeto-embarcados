@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import engine
 from . import models
 from .mqtt_client import mqtt_client
-from .routers import cards, metrics, tracking
-
+from .routers import cards, metrics, tracking, scanners
+# ...
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
     # Shutdown: Stop MQTT client
     mqtt_client.stop()
 
-app = FastAPI(title="RFID Dashboard API", lifespan=lifespan)
+app = FastAPI(title="SafeKid API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,6 +30,7 @@ app.add_middleware(
 app.include_router(cards.router)
 app.include_router(metrics.router)
 app.include_router(tracking.router)
+app.include_router(scanners.router)
 
 @app.get("/api/health")
 def health_check():
