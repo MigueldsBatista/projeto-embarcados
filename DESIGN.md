@@ -1,4 +1,4 @@
-# RFID Dashboard - Design Document
+# SafeKid - Design Document
 
 ## Architecture Overview
 The project follows a decoupled architecture consisting of an ESP32 embedded system, a FastAPI backend, and a Vue.js frontend.

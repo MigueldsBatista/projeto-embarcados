@@ -1,4 +1,4 @@
-# Projeto: ESP32 + RC522 (RFID)
+# SafeKid - ESP32 + RC522 (RFID)
 
 Leitor RFID RC522 (MFRC522) via SPI no ESP32, lendo UID do cracha e mapeando para informacoes.
 

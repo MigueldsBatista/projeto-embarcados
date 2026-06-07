@@ -1,6 +1,6 @@
-# RFID Dashboard - Implementation Master Plan
+# SafeKid - Implementation Master Plan
 
-This document serves as the single source of truth for the RFID Dashboard project. It tracks the implementation status of the backend, frontend, and infrastructure.
+This document serves as the single source of truth for the SafeKid project. It tracks the implementation status of the backend, frontend, and infrastructure.
 
 ## 🎯 Project Goal
 A professional web dashboard to manage RFID access control. ESP32 devices scan cards, send UIDs via MQTT to a FastAPI backend, which validates access and logs events. A Vue 3 dashboard provides real-time monitoring and card management.

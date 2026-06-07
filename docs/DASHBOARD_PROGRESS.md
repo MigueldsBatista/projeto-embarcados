@@ -1,4 +1,4 @@
-# RFID Dashboard Project: Plan & Progress
+# SafeKid Project: Plan & Progress
 
 ## Project Overview
 The goal is to transition from a hardcoded RFID registry on the ESP32 to a robust, scalable web dashboard. The system tracks card entries with timestamps, allows for management of registered cards, and provides real-time metrics.
