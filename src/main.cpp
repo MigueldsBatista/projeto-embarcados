@@ -47,6 +47,7 @@ const size_t kTrackingBenchmarkScaleCount = sizeof(kTrackingBenchmarkScales) / s
 
 unsigned long lastScanTime = 0;
 const unsigned long scanInterval = 5000; 
+bool isScanning = false;
 
 // Pin definitions
 #ifndef RC522_SS_PIN
@@ -67,6 +68,20 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 Preferences preferences;
 bool trackingBenchmarkRan = false;
+
+// Global states for LED feedback (Task 1)
+bool ledFeedbackActive = false;
+unsigned long ledFeedbackStart = 0;
+bool ledFeedbackType = false; // true for Green, false for Red blink
+
+// FreeRTOS Task Handles and Queues (Task 2)
+TaskHandle_t mqttTaskHandle = NULL;
+TaskHandle_t rfidTaskHandle = NULL;
+QueueHandle_t rfidQueue = NULL;
+
+struct RfidScan {
+  char uid[32];
+};
 
 enum class TrackingBenchmarkApproach : uint8_t {
   Inefficient = 0,
@@ -420,10 +435,24 @@ void setup_wifi_manager() {
 void scan_tracking_tags() {
   unsigned long now = millis();
   if (now - lastScanTime < scanInterval) return;
-  lastScanTime = now;
 
-  Serial.println("Iniciando varredura WiFi para tags...");
-  int n = WiFi.scanNetworks(false, false, false, 100);
+  if (!isScanning) {
+    Serial.println("Iniciando varredura WiFi assíncrona...");
+    WiFi.scanNetworks(true, false, false, 100);
+    isScanning = true;
+    return;
+  }
+
+  int n = WiFi.scanComplete();
+  if (n == WIFI_SCAN_FAILED) {
+    isScanning = false;
+    lastScanTime = now;
+    return;
+  }
+  
+  if (n < 0) return; // Scanning still in progress
+
+  Serial.printf("Varredura concluída: %d redes encontradas\n", n);
   TrackingSample benchmarkSnapshot[TRACKING_BENCHMARK_SNAPSHOT_LIMIT];
   size_t benchmarkSnapshotCount = 0;
   
@@ -447,6 +476,8 @@ void scan_tracking_tags() {
     }
   }
   WiFi.scanDelete();
+  isScanning = false;
+  lastScanTime = now;
 
 #if TRACKING_BENCHMARK_ENABLED
   if (!trackingBenchmarkRan) {
@@ -454,6 +485,27 @@ void scan_tracking_tags() {
     trackingBenchmarkRan = true;
   }
 #endif
+}
+
+void updateLedFeedback() {
+  if (!ledFeedbackActive) return;
+  
+  unsigned long now = millis();
+  if (ledFeedbackType) { // Green constant
+    if (now - ledFeedbackStart > 2000) {
+      digitalWrite(LED_GREEN_PIN, LOW);
+      ledFeedbackActive = false;
+    }
+  } else { // Red blinking
+    unsigned long elapsed = now - ledFeedbackStart;
+    if (elapsed > 1200) {
+      digitalWrite(LED_RED_PIN, LOW);
+      ledFeedbackActive = false;
+    } else {
+      // Toggle every 200ms
+      digitalWrite(LED_RED_PIN, (elapsed / 200) % 2 == 0);
+    }
+  }
 }
 
 void mqtt_callback(char* topic, byte* payload, unsigned int length) {
@@ -465,40 +517,41 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length) {
   StaticJsonDocument<200> doc;
   if (deserializeJson(doc, message) == DeserializationError::Ok) {
     bool authorized = doc["authorized"];
-    const char* name = doc["name"];
-
+    ledFeedbackActive = true;
+    ledFeedbackStart = millis();
+    ledFeedbackType = authorized;
+    
     if (authorized) {
-      Serial.printf("Acesso GARANTIDO para %s\n", name);
+      Serial.println("Acesso GARANTIDO");
       digitalWrite(LED_GREEN_PIN, HIGH);
-      delay(2000);
-      digitalWrite(LED_GREEN_PIN, LOW);
     } else {
       Serial.println("Acesso NEGADO");
-      for (int i = 0; i < 3; i++) {
-        digitalWrite(LED_RED_PIN, HIGH);
-        delay(200);
-        digitalWrite(LED_RED_PIN, LOW);
-        delay(200);
-      }
+      digitalWrite(LED_RED_PIN, HIGH);
     }
   }
 }
 
-void reconnect() {
-  while (!client.connected()) {
+unsigned long lastReconnectAttempt = 0;
+
+bool reconnect() {
+  if (client.connected()) return true;
+  
+  unsigned long now = millis();
+  if (now - lastReconnectAttempt > 5000) {
+    lastReconnectAttempt = now;
     Serial.print("Tentando conexão MQTT...");
     String clientId = "ESP32Scanner-";
     clientId += String(random(0xffff), HEX);
     
     if (client.connect(clientId.c_str())) {
       Serial.println("conectado");
+      return true;
     } else {
       Serial.print("falhou, rc=");
-      Serial.print(client.state());
-      Serial.println(" tentando novamente em 5 segundos");
-      delay(5000);
+      Serial.println(client.state());
     }
   }
+  return false;
 }
 
 String uidToString(const MFRC522::Uid &uid) {
@@ -510,6 +563,52 @@ String uidToString(const MFRC522::Uid &uid) {
   }
   out.toUpperCase();
   return out;
+}
+
+void mqttTask(void *pvParameters) {
+  for (;;) {
+    if (WiFi.status() == WL_CONNECTED) {
+      if (!client.connected()) {
+        reconnect();
+      }
+      client.loop();
+      scan_tracking_tags();
+      
+      RfidScan scan;
+      if (xQueueReceive(rfidQueue, &scan, 0) == pdTRUE) {
+        Serial.printf("Enviando UID %s para o broker...\n", scan.uid);
+        StaticJsonDocument<200> doc;
+        doc["uid"] = scan.uid;
+        char buffer[256];
+        serializeJson(doc, buffer);
+        client.publish("rfid/scans", buffer);
+        
+        String responseTopic = String("rfid/responses/") + scan.uid;
+        client.subscribe(responseTopic.c_str());
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+void rfidTask(void *pvParameters) {
+  for (;;) {
+    updateLedFeedback();
+    
+    if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+      Serial.print("Cartão detectado! UID: ");
+      RfidScan scan;
+      String uidStr = uidToString(rfid.uid);
+      Serial.println(uidStr);
+      strncpy(scan.uid, uidStr.c_str(), sizeof(scan.uid));
+      
+      xQueueSend(rfidQueue, &scan, portMAX_DELAY);
+      
+      rfid.PICC_HaltA();
+      rfid.PCD_StopCrypto1();
+    }
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
 }
 
 void setup() {
@@ -527,38 +626,14 @@ void setup() {
   SPI.begin(18, 19, 23, 5); // SCK, MISO, MOSI, SS
   rfid.PCD_Init();
   
+  rfidQueue = xQueueCreate(10, sizeof(RfidScan));
+  
+  xTaskCreatePinnedToCore(mqttTask, "MQTTTask", 8192, NULL, 1, &mqttTaskHandle, 0);
+  xTaskCreatePinnedToCore(rfidTask, "RFIDTask", 4096, NULL, 2, &rfidTaskHandle, 1);
+
   Serial.println("Scanner Pronto");
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    // Se o WiFi cair, tenta reconectar sem travar o loop infinitamente
-    // O WiFiManager cuida da reconexão em background se já foi configurado
-  }
-
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
-
-  scan_tracking_tags();
-
-  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
-    return;
-  }
-
-  String uidStr = uidToString(rfid.uid);
-  String responseTopic = "rfid/responses/" + uidStr;
-  client.subscribe(responseTopic.c_str());
-
-  StaticJsonDocument<200> doc;
-  doc["uid"] = uidStr;
-  char buffer[256];
-  serializeJson(doc, buffer);
-  client.publish("rfid/scans", buffer);
-
-  rfid.PICC_HaltA();
-  rfid.PCD_StopCrypto1();
-  
-  delay(1000); 
+  vTaskDelete(NULL); 
 }
