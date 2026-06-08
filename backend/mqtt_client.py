@@ -67,7 +67,8 @@ class RFIDMQTTClient:
         from datetime import datetime as dt, timedelta
         mac = payload.get("mac")
         rssi = payload.get("rssi")
-        scanner = payload.get("scanner", "unknown")
+        # For heartbeat, the scanner is the esp32-central that receives it (or self if tag)
+        scanner = payload.get("scanner", "esp32-central") 
         if not mac:
             return
 

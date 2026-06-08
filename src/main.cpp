@@ -31,7 +31,7 @@ const char* tracking_topic_benchmark_summary = "tracking/benchmark/summary";
 #endif
 
 #ifndef TRACKING_BENCHMARK_BATCH_SIZE
-#define TRACKING_BENCHMARK_BATCH_SIZE 20
+#define TRACKING_BENCHMARK_BATCH_SIZE 10
 #endif
 
 #ifndef TRACKING_BENCHMARK_NETWORK_DELAY_MS
@@ -235,7 +235,8 @@ void publishTrackingBenchmarkPerf(TrackingBenchmarkApproach approach, const Trac
 }
 
 void publishTrackingBenchmarkData(TrackingBenchmarkApproach approach, uint32_t targetN, TrackingSample* samples, size_t count, uint32_t batchIndex) {
-  StaticJsonDocument<1024> doc;
+  // Use a larger buffer for batches of 10 samples
+  StaticJsonDocument<2048> doc;
   doc["approach"] = trackingBenchmarkApproachToStr(approach);
   doc["n_target"] = targetN;
   doc["batch"] = batchIndex;
@@ -248,9 +249,11 @@ void publishTrackingBenchmarkData(TrackingBenchmarkApproach approach, uint32_t t
     row["t_us"] = samples[i].timestampUs;
   }
 
-  char payload[1024];
+  char payload[2048];
   size_t len = serializeJson(doc, payload);
-  client.publish(tracking_topic_benchmark_data, payload, len);
+  if (len > 0) {
+    client.publish(tracking_topic_benchmark_data, payload, len);
+  }
 }
 
 void publishTrackingBenchmarkSummary(TrackingBenchmarkApproach approach, const TrackingPerfStats& stats) {
@@ -622,6 +625,7 @@ void setup() {
   setup_wifi_manager();
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(mqtt_callback);
+  client.setBufferSize(2048); // Increase buffer for large benchmark payloads
 
   SPI.begin(18, 19, 23, 5); // SCK, MISO, MOSI, SS
   rfid.PCD_Init();
