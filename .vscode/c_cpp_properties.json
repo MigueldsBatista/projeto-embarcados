@@ -490,6 +490,7 @@
                 "PLATFORMIO=60119",
                 "ARDUINO_ESP32_DEV",
                 "CORE_DEBUG_LEVEL=0",
+                "TRACKING_BENCHMARK_ENABLED=0",
                 "RC522_SCK_PIN=18",
                 "RC522_MOSI_PIN=23",
                 "RC522_MISO_PIN=19",
