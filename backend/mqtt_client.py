@@ -50,6 +50,8 @@ class RFIDMQTTClient:
                     self.process_scan(uid)
             elif topic == MQTT_TOPIC_DISCOVERY:
                 self.process_discovery(payload)
+            elif topic == MQTT_TOPIC_HEARTBEAT:
+                self.process_discovery(payload) # Heartbeat uses same schema as discovery
             elif topic == MQTT_TOPIC_BENCHMARK_SUMMARY:
                 self.store_benchmark_summary(payload)
             elif topic == MQTT_TOPIC_BENCHMARK_PERF:

@@ -41,14 +41,14 @@ const chartOptions = computed(() => {
     yaxis: {
       title: { text: 'Latência (μs)' },
       labels: {
-        formatter: (val: number) => val.toFixed(0)
+        formatter: (val: number) => val?.toFixed(0) || '0'
       }
     },
     tooltip: {
       shared: true,
       intersect: false,
       y: {
-        formatter: (val: number) => `${val.toFixed(0)} μs`
+        formatter: (val: number) => val ? `${val.toFixed(0)} μs` : '0 μs'
       }
     },
     legend: { position: 'top' as const, horizontalAlign: 'right' as const },
