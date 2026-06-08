@@ -48,3 +48,47 @@ export interface HeatmapData {
   series: unknown[];
   boxplot_series: unknown[];
 }
+
+export interface TrackingBenchmarkSummary {
+  approach: 'inefficient' | 'circular';
+  n_target: number;
+  processed: number;
+  latency_min_us: number;
+  latency_max_us: number;
+  latency_avg_us: number;
+  heap_min: number;
+  heap_max: number;
+  dropped: number;
+  updated_at: string;
+  summary_key: string;
+}
+
+export interface TrackingBenchmarkPerfPoint {
+  approach: 'inefficient' | 'circular';
+  n_target: number;
+  index: number;
+  latency_us: number;
+  heap_free: number;
+  received_at: string;
+}
+
+export interface TrackingBenchmarkBatchSample {
+  mac: string;
+  rssi: number;
+  scanner: string;
+  t_us: number;
+}
+
+export interface TrackingBenchmarkBatch {
+  approach: 'inefficient' | 'circular';
+  n_target: number;
+  batch: number;
+  samples: TrackingBenchmarkBatchSample[];
+  received_at: string;
+}
+
+export interface TrackingBenchmarkState {
+  summaries: TrackingBenchmarkSummary[];
+  perf_points: TrackingBenchmarkPerfPoint[];
+  recent_batches: TrackingBenchmarkBatch[];
+}

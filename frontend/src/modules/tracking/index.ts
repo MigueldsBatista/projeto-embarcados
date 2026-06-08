@@ -7,4 +7,5 @@ export const trackingRoutes = [
   },
 ]
 
+export { useBenchmarkQuery } from './composables/useBenchmarkQuery'
 export { useDiscoveryQuery } from './composables/useDiscoveryQuery'

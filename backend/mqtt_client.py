@@ -1,4 +1,5 @@
 import json
+from collections import deque
 from datetime import datetime
 import paho.mqtt.client as mqtt
 from .database import SessionLocal
@@ -15,6 +16,9 @@ MQTT_TOPIC_SCANS = "rfid/scans"
 MQTT_TOPIC_RESPONSES = "rfid/responses/"
 MQTT_TOPIC_DISCOVERY = "tracking/discovery"
 MQTT_TOPIC_HEARTBEAT = "tracking/heartbeat"
+MQTT_TOPIC_BENCHMARK_DATA = "tracking/benchmark/data"
+MQTT_TOPIC_BENCHMARK_PERF = "tracking/benchmark/perf"
+MQTT_TOPIC_BENCHMARK_SUMMARY = "tracking/benchmark/summary"
 
 class RFIDMQTTClient:
     def __init__(self):
@@ -22,12 +26,18 @@ class RFIDMQTTClient:
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.discovered_tags = {} # MAC -> {rssi, timestamp}
+        self.benchmark_summaries = {}
+        self.benchmark_perf_points = deque(maxlen=240)
+        self.benchmark_batches = deque(maxlen=24)
 
     def on_connect(self, client, userdata, flags, rc, properties):
         logger.info(f"Connected to MQTT Broker with result code {rc}")
         client.subscribe(MQTT_TOPIC_SCANS)
         client.subscribe(MQTT_TOPIC_DISCOVERY)
         client.subscribe(MQTT_TOPIC_HEARTBEAT)
+        client.subscribe(MQTT_TOPIC_BENCHMARK_DATA)
+        client.subscribe(MQTT_TOPIC_BENCHMARK_PERF)
+        client.subscribe(MQTT_TOPIC_BENCHMARK_SUMMARY)
 
     def on_message(self, client, userdata, msg):
         try:
@@ -39,28 +49,88 @@ class RFIDMQTTClient:
                 if uid:
                     self.process_scan(uid)
             elif topic == MQTT_TOPIC_DISCOVERY:
-                mac = payload.get("mac")
-                rssi = payload.get("rssi")
-                scanner = payload.get("scanner", "unknown")
-                if mac:
-                    # Cache para o frontend consultar o que está perto
-                    self.discovered_tags[mac] = {
-                        "rssi": rssi,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    self.process_tracking(mac, rssi, scanner)
-                    # Limpa cache antigo (> 1 min)
-                    self._cleanup_discovery()
-        except Exception as e:
-            logger.error(f"Error processing MQTT message: {e}")
+                self.process_discovery(payload)
+            elif topic == MQTT_TOPIC_BENCHMARK_SUMMARY:
+                self.store_benchmark_summary(payload)
+            elif topic == MQTT_TOPIC_BENCHMARK_PERF:
+                self.store_benchmark_perf(payload)
+            elif topic == MQTT_TOPIC_BENCHMARK_DATA:
+                self.store_benchmark_batch(payload)
+        except json.JSONDecodeError:
+            logger.exception("Error decoding MQTT message")
+        except Exception:
+            logger.exception("Error processing MQTT message")
 
-    def _cleanup_discovery(self):
+    def process_discovery(self, payload):
         from datetime import datetime as dt, timedelta
-        now = dt.now()
-        to_delete = [mac for mac, data in self.discovered_tags.items() 
-                     if dt.fromisoformat(data["timestamp"]) < now - timedelta(minutes=1)]
-        for mac in to_delete:
-            del self.discovered_tags[mac]
+        mac = payload.get("mac")
+        rssi = payload.get("rssi")
+        scanner = payload.get("scanner", "unknown")
+        if not mac:
+            return
+
+        self.discovered_tags[mac] = {
+            "rssi": rssi,
+            "scanner": scanner,
+            "timestamp": dt.now().isoformat(),
+        }
+        self.process_tracking(mac, rssi, scanner)
+        self.cleanup_discovery()
+
+    def cleanup_discovery(self):
+        from datetime import datetime as dt, timedelta
+        cutoff = dt.now() - timedelta(minutes=1)
+        stale_keys = []
+        for mac, info in self.discovered_tags.items():
+            timestamp = info.get("timestamp")
+            if not timestamp:
+                stale_keys.append(mac)
+                continue
+            try:
+                seen_at = dt.fromisoformat(timestamp)
+            except ValueError:
+                stale_keys.append(mac)
+                continue
+            if seen_at < cutoff:
+                stale_keys.append(mac)
+
+        for mac in stale_keys:
+            self.discovered_tags.pop(mac, None)
+
+    def store_benchmark_summary(self, payload):
+        from datetime import datetime as dt
+        approach = payload.get("approach", "unknown")
+        target = payload.get("n_target", 0)
+        self.benchmark_summaries[approach] = {
+            **payload,
+            "summary_key": f"{approach}-{target}",
+            "updated_at": dt.now().isoformat(),
+        }
+
+    def store_benchmark_perf(self, payload):
+        from datetime import datetime as dt
+        self.benchmark_perf_points.append(
+            {
+                **payload,
+                "received_at": dt.now().isoformat(),
+            }
+        )
+
+    def store_benchmark_batch(self, payload):
+        from datetime import datetime as dt
+        self.benchmark_batches.append(
+            {
+                **payload,
+                "received_at": dt.now().isoformat(),
+            }
+        )
+
+    def get_benchmark_state(self):
+        return {
+            "summaries": list(self.benchmark_summaries.values()),
+            "perf_points": list(self.benchmark_perf_points),
+            "recent_batches": list(self.benchmark_batches),
+        }
 
     def process_tracking(self, mac, rssi, scanner_id):
         db = SessionLocal()

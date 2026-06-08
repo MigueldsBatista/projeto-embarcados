@@ -25,6 +25,11 @@ def get_discovered_tags():
     """Returns recently discovered MAC addresses (last 1 min)"""
     return mqtt_client.discovered_tags
 
+@router.get("/benchmark")
+def get_tracking_benchmark():
+    """Returns the current state of the tracking benchmark"""
+    return mqtt_client.get_benchmark_state()
+
 @router.get("/live")
 def get_live_tracking(db: Session = Depends(get_db)):
     """Returns the current location status of all students with trackers"""
