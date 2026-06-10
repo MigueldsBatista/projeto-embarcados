@@ -333,7 +333,10 @@ void runTrackingInefficientBenchmark(const TrackingSample* snapshot, size_t snap
   stats.targetN = targetN;
   trackingInefficientWindow.clear();
 
-  TrackingSample single[1];
+  uint32_t batchIndex = 0;
+  TrackingSample batch[TRACKING_BENCHMARK_BATCH_SIZE];
+  size_t batchCount = 0;
+
   for (uint32_t i = 0; i < targetN; ++i) {
     TrackingSample sample = sampleFromSnapshot(snapshot, snapshotCount, i);
     unsigned long start = micros();
@@ -350,10 +353,21 @@ void runTrackingInefficientBenchmark(const TrackingSample* snapshot, size_t snap
       publishTrackingBenchmarkPerf(TrackingBenchmarkApproach::Inefficient, stats, duration, i);
     }
 
-    single[0] = sample;
-    publishTrackingBenchmarkData(TrackingBenchmarkApproach::Inefficient, targetN, single, 1, i);
-    client.loop();
-    delay(TRACKING_BENCHMARK_NETWORK_DELAY_MS);
+    // Collect into batch
+    batch[batchCount++] = sample;
+    if (batchCount == TRACKING_BENCHMARK_BATCH_SIZE) {
+      publishTrackingBenchmarkData(TrackingBenchmarkApproach::Inefficient, targetN, batch, batchCount, batchIndex++);
+      batchCount = 0;
+      client.loop();
+      delay(TRACKING_BENCHMARK_NETWORK_DELAY_MS);
+    }
+    
+    if ((i % 50) == 0) client.loop();
+  }
+
+  // Send remaining
+  if (batchCount > 0) {
+    publishTrackingBenchmarkData(TrackingBenchmarkApproach::Inefficient, targetN, batch, batchCount, batchIndex++);
   }
 
   publishTrackingBenchmarkSummary(TrackingBenchmarkApproach::Inefficient, stats);
@@ -418,6 +432,9 @@ void setup_wifi_manager() {
 
   // Configura timeout para não travar se o WiFi cair depois
   wifiManager.setConfigPortalTimeout(180); // 3 minutos
+
+  // Tenta conectar com as credenciais padrão primeiro
+  WiFi.begin("uaifai-brum", "bemvindoaocesar");
 
   if (!wifiManager.autoConnect("ESP32-Scanner-Config")) {
     Serial.println("Falha ao conectar, reiniciando...");

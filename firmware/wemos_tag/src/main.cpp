@@ -53,6 +53,9 @@ void setup_wifi_manager() {
   wifiManager.setSaveConfigCallback(saveConfigCallback);
   wifiManager.addParameter(&custom_mqtt_server);
 
+  // Tenta conectar com as credenciais padrão primeiro
+  WiFi.begin("uaifai-brum", "bemvindoaocesar");
+
   // Tenta conectar, se falhar abre o AP único
   if (!wifiManager.autoConnect(apName.c_str())) {
     Serial.println("Falha ao conectar e timeout do portal atingido");
